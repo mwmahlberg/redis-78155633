@@ -1,0 +1,112 @@
+version: "3.9"
+
+x-vars:
+  redis-shared-config: &redis-shared-config
+    entrypoint: [ "redis-server", "/usr/local/etc/redis/redis.conf", --port,"6379" ]
+    image: redis/redis-stack-server:latest
+    healthcheck:
+      test: [ "CMD", "redis-cli", "ping" ]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+    configs:
+      - source: redis-conf
+        target: /usr/local/etc/redis/redis.conf
+
+configs:
+  redis-conf:
+    file: ./build/redis/redis.conf
+volumes:
+  redis-data-1:
+  redis-data-2:
+  redis-data-3:
+  redis-data-4:
+  redis-data-5:
+  redis-data-6:
+
+services:
+  redis-node-1:
+    container_name: redis-1
+    <<: *redis-shared-config
+    volumes:
+      - "redis-data-1:/data"
+  redis-node-2:
+    container_name: redis-2
+    <<: *redis-shared-config
+    volumes:
+      - "redis-data-2:/data"
+  redis-node-3:
+    container_name: redis-3
+    <<: *redis-shared-config
+    volumes:
+      - "redis-data-3:/data"
+  redis-node-4:
+    container_name: redis-4
+    <<: *redis-shared-config
+    volumes:
+      - "redis-data-4:/data"
+  redis-node-5:
+    container_name: redis-5
+    <<: *redis-shared-config
+    volumes:
+      - "redis-data-5:/data"
+  redis-node-6:
+    container_name: redis-6
+    <<: *redis-shared-config
+    volumes:
+      - "redis-data-6:/data"
+  redis-cluster-creator:
+    container_name: redis-cluster-creator
+    image: redis/redis-stack-server:latest
+
+    # Make the run of redis-cluster-creator service idempotent
+    # by checking the cluster health before creating it.
+    # We do this so that we can make our app a dependent service
+    # of the redis-cluster-creator service.
+    #
+    # Explanation of the command:
+    # If the cluster is already created the part before || will be
+    # successful and exit with 0 and the part after || will not be executed.
+    #
+    # If the cluster is not created the part before || will
+    # fail and the part after || will be executed.
+    # If successful, the create command will exit with 0.
+    command: |
+      bash -c "redis-cli --cluster check redis-node-1:6379 || (echo Setting up redis cluster; redis-cli --cluster create redis-node-1:6379 redis-node-2:6379 redis-node-3:6379 redis-node-4:6379 redis-node-5:6379 redis-node-6:6379 --cluster-replicas 1 --cluster-yes)"
+    depends_on:
+      redis-node-1:
+        condition: service_healthy
+      redis-node-2:
+        condition: service_healthy
+      redis-node-3:
+        condition: service_healthy
+      redis-node-4:
+        condition: service_healthy
+      redis-node-5:
+        condition: service_healthy
+      redis-node-6:
+        condition: service_healthy
+
+  app:
+    image: myapp:latest
+    platform: linux/amd64
+    build:
+      context: ./build/app
+    environment:
+      - MY_APP_REDIS_ADDRESSES=redis-node-1:6379,redis-node-2:6379,redis-node-3:6379,redis-node-4:6379,redis-node-5:6379,redis-node-6:6379
+    depends_on:
+      redis-cluster-creator:
+        condition: service_completed_successfully
+      redis-node-1:
+        condition: service_healthy
+      redis-node-2:
+        condition: service_healthy
+      redis-node-3:
+        condition: service_healthy
+      redis-node-4:
+        condition: service_healthy
+      redis-node-5:
+        condition: service_healthy
+      redis-node-6:
+        condition: service_healthy
+

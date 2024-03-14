@@ -94,6 +94,7 @@ cluster_health:
 		}
 	}
 
+	// Or, we
 	appCtx.Printf("\nPinging each shard member\n=========================")
 	if err := rdb.ForEachShard(context.Background(), func(ctx context.Context, client *redis.Client) error {
 		r := client.Ping(ctx)
